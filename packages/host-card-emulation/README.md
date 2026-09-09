@@ -25,7 +25,8 @@ Make sure that your project has it enabled. Note that the New Architecture is en
 5. Wait until the entitlement is approved by Apple.
 
 ### Android
-*(no prerequisite steps are required for Android)*
+1. Ensure that your app's `minSdkVersion` is at least 24 (Android 7.0). This is the floor imposed by React Native's New Architecture; the Host Card Emulation APIs used by this package are available since Android 5.1.
+2. Note that HCE availability also depends on the device hardware - always check `isPlatformSupported()` before starting a session.
 
 ## Installation
 Install this package within your React Native project:
@@ -101,7 +102,8 @@ Afterwards, follow the subsections below for each platform that you need to supp
    ```xml
    <host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
      android:description="@string/app_name"
-     android:requireDeviceUnlock="false">
+     android:requireDeviceUnlock="false"
+     android:requireDeviceScreenOn="true">
      <aid-group android:category="other"
        android:description="@string/app_name">
        <aid-filter android:name="F001020304" />
@@ -111,6 +113,13 @@ Afterwards, follow the subsections below for each platform that you need to supp
    </host-apdu-service>
    ```
    Replace `F001020304`, `F00102030405`, `F0010203040506` with the ISO7816 AIDs that you want to support.
+
+   Keep `android:requireDeviceUnlock` set to `false` in any scenario, this is the way to avoid having system prompts
+   displayed by Android whenever the app is interacted with when the phone is locked. On the JavaScript/TypeScript side,
+   you will receive `deviceLocked`/`deviceUnlocked` events that will let you decide whether you want to allow the NFC
+   interaction or not.
+
+   For `android:requireDeviceScreenOn` - set it according to your use case.
 
 ## API Specification & Demo App
 
@@ -169,6 +178,20 @@ This module provides a uniform low-level HCE API for both mobile platforms.
    For those events, trigger mechanisms are platform dependent:
    * iOS: The `readerDetected` event will be emitted as soon as the NFC reader's field presence is observed. The `readerDeselected` event will be emitted if the reader is physically disconnected or a non-matching AID is selected by the reader.
    * Android: The `readerDetected` event will be emitted as soon as the first matching SELECT AID command is observed. The `readerDeselected` event will be emitted if the reader is physically disconnected or a non-matching AID is selected by the reader.
+
+   The device lock state is reported through the `deviceLocked` and `deviceUnlocked` events, which are the only source of truth about it. One of them is always emitted before the `received` event of the first C-APDU of a session, so the state is known upfront.
+   ```typescript
+   case 'deviceLocked':
+       setDeviceLocked(true);
+       break;
+
+   case 'deviceUnlocked':
+       setDeviceLocked(false);
+       break;
+   ```
+   For the lock state events, trigger mechanisms are platform dependent:
+   * iOS: The event is always `deviceUnlocked` - it's impossible to communicate over HCE while the device is locked, so the state cannot change during a session.
+   * Android: The state is re-sampled whenever a C-APDU arrives and, if it differs from the one reported so far, the corresponding event is emitted straight before the `received` event of that C-APDU. C-APDUs are always forwarded - it is up to you to decide how to treat a locked device.
 4. Receive incoming C-APDU and respond to it:
    ```typescript
    // inside NativeHCEModule.onEvent handler's switch
@@ -232,14 +255,15 @@ for instance - your app may emulate an NDEF tag even when it's not launched on t
 
 1. Register `handleBackgroundHCECall` headless task in your app's `index.js`:
    ```typescript
-   import { createBackgroundHCE } from '@icedevml/react-native-host-card-emulation/js/hceBackground';
+   import { BackgroundHCETaskData, createBackgroundHCE } from '@icedevml/react-native-host-card-emulation/js/hceBackground';
 
    AppRegistry.registerHeadlessTask('handleBackgroundHCECall', () => {
-      return async (taskData) => {
-         return await runBackgroundHCETask(createBackgroundHCE(taskData.handle));
+      return async (taskData: BackgroundHCETaskData) => {
+         return await runBackgroundHCETask(createBackgroundHCE(taskData));
       }
    });
    ```
+   Pass the whole `taskData` object to `createBackgroundHCE()`, so that it could be handed over to your event handler as its third argument. The device lock state is reported to your handler as `deviceLocked` and `deviceUnlocked` events: always before the `received` event of the first C-APDU of a session, and then again straight before the `received` event of any C-APDU during which a change of that state was noticed. C-APDUs are always forwarded - it is up to you to decide how to treat a locked device.
 2. Implement your background HCE handler by passing an event callback to `processBackgroundHCE()`:
    ```typescript
    import { Buffer } from 'buffer/';
@@ -250,7 +274,7 @@ for instance - your app may emulate an NDEF tag even when it's not launched on t
    export default async function runBackgroundHCETask(processBackgroundHCE: ProcessBackgroundHCEFunc) {
       // ... initialize any state keeping variables here ...
 
-      processBackgroundHCE(async (event, respondAPDU) => {
+      processBackgroundHCE(async (event, respondAPDU, taskData) => {
          switch (event.type) {
             /* ... background HCE event handler here ... */
          }
