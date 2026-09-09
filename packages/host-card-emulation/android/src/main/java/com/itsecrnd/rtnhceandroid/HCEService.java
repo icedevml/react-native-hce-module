@@ -9,6 +9,7 @@ package com.itsecrnd.rtnhceandroid;
 import static com.facebook.react.jstasks.HeadlessJsTaskContext.Companion;
 
 import android.app.ActivityManager;
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.nfc.cardemulation.HostApduService;
 import android.os.Build;
@@ -32,7 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
-@RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
+@RequiresApi(api = Build.VERSION_CODES.N)
 public class HCEService extends HostApduService implements HCEServiceCallback {
     private static final String TAG = "HCEService";
 
@@ -42,12 +43,39 @@ public class HCEService extends HostApduService implements HCEServiceCallback {
     private RTNHCEAndroidModule hceModule;
     private byte[] pendingCAPDU;
     private volatile boolean needsResponse;
+    private volatile Boolean reportedDeviceLocked;
+    private Boolean pendingDeviceLocked;
     private final HashMap<String, Integer> taskSessionIdMap;
 
     public HCEService() {
         super();
 
         taskSessionIdMap = new HashMap<>();
+    }
+
+    private boolean isDeviceLocked() {
+        /*
+         The KeyguardManager has to be obtained lazily, as the service's context
+         is not yet attached when the instance is being constructed.
+         */
+        KeyguardManager keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        return keyguardManager != null && keyguardManager.isDeviceLocked();
+    }
+
+    private void reportDeviceLockState(boolean deviceLocked) {
+        if (reportedDeviceLocked != null && reportedDeviceLocked == deviceLocked) {
+            return;
+        }
+
+        reportedDeviceLocked = deviceLocked;
+        final String type = deviceLocked ? "deviceLocked" : "deviceUnlocked";
+        Log.d(TAG, "HCEService:reportDeviceLockState " + type);
+
+        if (isForeground) {
+            hceModule.sendEvent(type, "");
+        } else {
+            hceModule.sendBackgroundEvent(backgroundSessionUUID, type, "");
+        }
     }
 
     private boolean isAppOnForeground(Context context) {
@@ -87,6 +115,12 @@ public class HCEService extends HostApduService implements HCEServiceCallback {
 
         if (pendingCAPDU != null) {
             Log.d(TAG, "HCEService:onBackgroundHCEInit send pendingCAPDU");
+
+            if (pendingDeviceLocked != null) {
+                reportDeviceLockState(pendingDeviceLocked);
+                pendingDeviceLocked = null;
+            }
+
             hceModule.sendBackgroundEvent(backgroundSessionUUID, "received", BinaryUtils.ByteArrayToHexString(pendingCAPDU));
             pendingCAPDU = null;
         }
@@ -156,6 +190,7 @@ public class HCEService extends HostApduService implements HCEServiceCallback {
         if (isForeground) {
             if (hceModule._isHCERunning() && hceModule.isHCEActiveConnection()) {
                 Log.d(TAG, "HCEService:processCommandApdu foreground sendEvent received");
+                reportDeviceLockState(isDeviceLocked());
                 needsResponse = true;
                 hceModule.sendEvent("received", capdu);
             } else {
@@ -165,12 +200,14 @@ public class HCEService extends HostApduService implements HCEServiceCallback {
         } else {
             if (hceModule != null && hceModule.isHCEBackgroundHandlerReady()) {
                 Log.d(TAG, "HCEService:processCommandApdu background sendBackgroundEvent received");
+                reportDeviceLockState(isDeviceLocked());
                 needsResponse = true;
                 hceModule.sendBackgroundEvent(backgroundSessionUUID, "received", capdu);
             } else {
                 Log.d(TAG, "HCEService:processCommandApdu background pendingCAPDU");
                 needsResponse = true;
                 pendingCAPDU = command;
+                pendingDeviceLocked = isDeviceLocked();
             }
         }
 
@@ -190,8 +227,10 @@ public class HCEService extends HostApduService implements HCEServiceCallback {
         isForeground = isAppOnForeground(getApplicationContext());
         isDeactivated = false;
         pendingCAPDU = null;
+        pendingDeviceLocked = null;
         hceModule = null;
         needsResponse = false;
+        reportedDeviceLocked = null;
 
         if (isForeground) {
             Log.d(TAG, "HCEService:onCreate foreground");

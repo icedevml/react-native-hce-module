@@ -11,6 +11,6 @@ import runBackgroundHCETask from './background';
 AppRegistry.registerComponent(appName, () => App);
 AppRegistry.registerHeadlessTask('handleBackgroundHCECall', () => {
   return async (taskData) => {
-    return await runBackgroundHCETask(createBackgroundHCE(taskData.handle));
+    return await runBackgroundHCETask(createBackgroundHCE(taskData));
   }
 });

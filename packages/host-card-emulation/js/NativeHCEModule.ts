@@ -18,12 +18,32 @@ export type HCEModuleEventType =
      * Received C-APDU (hex-encoded string in "arg" key) from the reader.
      * Respond by calling respondAPDU(rapdu).
      */
-    | 'received';
+    | 'received'
+    /**
+     * The device lock state, always reported before the 'received' event of the
+     * first C-APDU of a session and then again whenever it changes.
+     *
+     * iOS: Always 'deviceUnlocked' - it's impossible to communicate over HCE while
+     * the device is locked, so the state cannot change during a session.
+     * Android: The state is sampled whenever a C-APDU arrives, so a change is
+     * reported straight before the 'received' event of the C-APDU during which it
+     * was noticed.
+     */
+    | 'deviceLocked'
+    | 'deviceUnlocked';
 export type HCEModuleStopReason = 'success' | 'failure';
 
 export type HCEModuleBackgroundEventType =
     'readerDeselected'
-    | 'received';
+    | 'received'
+    /**
+     * The device lock state, always reported before the 'received' event of the
+     * first C-APDU of a session and then again whenever it changes. The state is
+     * sampled whenever a C-APDU arrives, so a change is reported straight before
+     * the 'received' event of the C-APDU during which it was noticed.
+     */
+    | 'deviceLocked'
+    | 'deviceUnlocked';
 
 export type HCEModuleEvent = {
   type: HCEModuleEventType

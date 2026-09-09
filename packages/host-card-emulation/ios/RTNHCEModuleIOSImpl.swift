@@ -25,6 +25,7 @@ extension Data {
   var cardSessionInvalidated: Bool = true
   var presentmentIntent: NFCPresentmentIntentAssertion? = nil
   var receivedCardAPDU: CardSession.APDU? = nil
+  var deviceLockStateReported: Bool = false
 
   var emitOnEvent: ((NSString, NSString?) -> ())? = nil
 
@@ -105,6 +106,7 @@ extension Data {
       }
 
       self.cardSessionInvalidated = false
+      self.deviceLockStateReported = false
       resolve(nil)
 
       do {
@@ -121,6 +123,12 @@ extension Data {
             self.emitOnEvent!("readerDeselected", "")
 
           case .received(let cardAPDU):
+            if !self.deviceLockStateReported {
+              // it's impossible to communicate over HCE while the device is locked
+              self.deviceLockStateReported = true
+              self.emitOnEvent!("deviceUnlocked", "")
+            }
+
             self.receivedCardAPDU = cardAPDU
             self.emitOnEvent!("received", NSString(string:cardAPDU.payload.hexEncodedString()))
 

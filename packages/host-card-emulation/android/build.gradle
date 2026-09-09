@@ -17,6 +17,12 @@ apply plugin: 'com.facebook.react'
 android {
     compileSdkVersion safeExtGet('compileSdkVersion', 33)
     namespace "com.itsecrnd.rtnhceandroid"
+
+    defaultConfig {
+        // API 24 is the floor imposed by React Native's New Architecture,
+        // the HCE APIs used here are available since API 22.
+        minSdkVersion safeExtGet('minSdkVersion', 24)
+    }
 }
 
 repositories {

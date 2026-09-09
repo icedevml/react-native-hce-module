@@ -104,7 +104,7 @@ public class RTNHCEAndroidModule extends NativeHCEModuleSpec {
     @Override
     public boolean isPlatformSupported() {
         Log.d(TAG, "RTNHCEAndroidModule:isPlatformSupported");
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             return false;
         }
 
@@ -239,7 +239,7 @@ public class RTNHCEAndroidModule extends NativeHCEModuleSpec {
         promise.resolve(null);
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
+    @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
     public void respondAPDU(String handle, String rapdu, Promise promise) {
         Log.d(TAG, "RTNHCEAndroidModule:respondAPDU");
